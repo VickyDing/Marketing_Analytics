@@ -1,0 +1,90 @@
+---
+title: "Association Rule Mining"
+output: pdf_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.align="center"}
+library(arules)
+library(tidyverse)
+library(dplyr)
+
+#Read file
+groceries <- read.transactions('https://github.com/jgscott/STA380/blob/master/data/groceries.txt', sep = ",")
+```
+
+## Preliminary Analysis
+Our dataset contains 9835 unique transactions. By multiplying the number of rows, columns and density, we can calculate the total number of items purchased at 43371.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE,fig.align="center"}
+summary(groceries)
+
+9836*169*0.02609146
+```
+
+## Basket Size Frequency
+
+The number of items in each grocery order varied from anywhere between 1 and 32 items. The average grocery order contained 4 items, but single item checkouts were by far the most common order size. It seems like our shoppers are not buying groceries in bulk, and tend to come in for a few items each time. Crosselling or bundling products could encourage larger order sizes and reverse this trend. 
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE,fig.align="center"}
+summary(size(groceries))
+
+grocery_size <- data.frame(size(groceries)) %>%
+  group_by(size.groceries.) %>%
+  summarise(counts = n())
+
+ggplot(grocery_size) + 
+  geom_col(aes(x = size.groceries., y = counts)) + 
+  labs(x="Grocery",
+       y="Counts")
+```
+
+## Most Popular grocery items
+
+The Arules package allows us to find the support, or frequency, of each item in proportion to the total number of items purchased. Whole milk was the most popular item. There seems to be a good variety of grocery categories in the top 10, with vegetables being the only notable food category with multiple entries. The products here would make good starting points as items that can be used to cross-sell other less popular products.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE,fig.align="center"}
+itemFrequencyPlot(groceries, topN = 10, xlab = 'Grocery Items', ylab = 'Support')
+```
+## Finding Lift Associations
+
+The Apriori algorithm will help us identify lift relationships between grocery items. It will require us to input a minimum support level and a minimum confidence level. For the support level, we will use anything that has a frequency that is at least greater than the 1st quartile, which comes up to 0.0038637. This will avoid most items that come up in orders with less than 2 items.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE,fig.align="center"}
+
+model1 <- apriori(groceries, parameter = list(support = 0.0038637, confidence = 0.8))
+summary(model1)
+```
+Model1 returns 0 rules due to our confidence threshold being too high. We rerun the model with a 0 minimum confidence level. This returns 3567 rules 
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE,fig.align="center"}
+model2<-apriori(groceries, parameter = list(support = 0.0038637, confidence = 0))
+summary(model2)
+inspect(sort(model2, by = "lift")[1:10])
+```
+
+As there are quite a lot of rules with low confidence levels, we adjust confidence level to the mean confidence of model2. This returns 1333 rules.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE,fig.align="center"}
+model3 <- apriori(groceries, parameter = list(support = 0.0038, confidence = 0.21473))
+summary(model3)
+```
+
+We find the top 10 associations sorted by lift. Topping the list is sugar, which has a 8.463112 lift when flour is purchased. This makes sense given that flour and sugar are key ingredients in many baking recipes such as cookies or cakes. 
+
+Interesting thing to note, in model2, "sugar => flour" was in the top 10, but was dropped in model3 due to it's low confidence level. This probably reflects how flour is more flexible as an ingredient being used in other ways such as breadmaking or deepfrying. 
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE,fig.align="center"}
+top10lift <- DATAFRAME(sort(model3, by = "lift")[1:10])
+top10lift$association_name <- paste(top10lift$LHS, " => ", top10lift$RHS)
+top10lift <- top10lift[order(top10lift$lift),]
+
+ggplot(top10lift) + 
+  geom_col(aes(x = reorder(association_name, lift), y = lift)) + 
+  coord_flip()
+```
+
+## Conclusion
+Through our analysis, we've identified that our grocery store has a key problem in small customer basket size. To solve this, we identified the top selling products that could serve as opportunities for cross-selling less popular products. We also found products with strong likelihood of being purchased together. These products could be bundled together with a slight discount to further encourage additional purchases.
