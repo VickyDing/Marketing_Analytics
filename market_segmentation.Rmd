@@ -1,0 +1,117 @@
+---
+title: "market_segmentation"
+author: "Qingye Ding"
+date: "8/11/2021"
+output: pdf_document
+---
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.align="center"}
+rm(list=ls())
+df <- readr::read_csv("https://raw.githubusercontent.com/jgscott/STA380/master/data/social_marketing.csv")
+mkt = na.omit(df)
+attach(mkt)
+library(tidyverse)
+library(ggplot2)
+library(ggcorrplot)
+
+# we don't want to include user name, chatter, spam, and uncategorized data, so create a new data frame
+X <- cbind(current_events, travel, photo_sharing, tv_film, sports_fandom, politics, food, family, home_and_garden, music, news, online_gaming, shopping, health_nutrition, college_uni, sports_playing, cooking, eco, computers, business, outdoors, crafts, automotive, art, religion, beauty, parenting, dating, school, personal_fitness, fashion, small_business)
+```
+
+We first create a correlation plot. Based on the plot, we identified 8 major interests: 1. outdoors, health nutrition, and personal fitness; 2. beauty, cooking, fashion; 3. photo sharing and shopping; 4.news and automotive; 5. family,school, food, sports fandom, religion, parenting; 6. computers, travel, politics; 7. sports playing, online gaming, college uni; 8. tv film, art.
+```{r, echo=FALSE, warning=FALSE, message=FALSE,fig.align="center",fig.cap='Correlation Plot'}
+#find correlation, group types of interest
+ggcorrplot::ggcorrplot(cor(X), hc.order = TRUE)+
+  theme(text = element_text(size=10), # size of label
+        axis.text.x = element_text(angle = 90, size=8),
+                axis.text.y = element_text(size=8))
+```
+
+Next, we use principle component analysis to further explore features.
+```{r, echo=FALSE, warning=FALSE, message=FALSE,fig.align="center",fig.dim = c(8, 8),fig.cap='PCA'}
+#set.seed(2)
+pca_mkt = prcomp(X, rank=5, scale=TRUE)
+biplot(pca_mkt, expand=5, 
+       xlim=c(-5,50), ylim=c(-45,40),scale=0, cex=c(0.5,0.9))
+
+```
+Following is a list of values of loading vectors of 5 principle components.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE,fig.align="center"}
+# observe loading vectors and find correlation relationship
+loadings_summary = pca_mkt$rotation
+loadings_summary
+```
+Combining PCA plot and loading vector values, we find that the first principle component groups users as follows: 1. family persons who are interested in family, parenting, religion, sports fandom, food, and school; 2. female users who have interests in beauty, crafts, cooking, and fashion; 3. environmentalists who are interested in photo-sharing, computers, outdoors, eco; 4. users who love personal fitness, news, politics, automotive, business, sports playing, and health nutrition; 5. small business owners who are interested in travel, music, home and garden, small business, shopping, dating, art, TV film; 6. college students who are interested in current events, college uni, and online gaming. This result basically justifies the correlation analysis.
+
+# K-means Clustering
+Based on the distance to centroid, we identify what variables are in the same cluster. For example, food and parenting have similar scores, and the plot validates that most of them belong to the same cluster. First, we examine and select the best number of clusters. 
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE,fig.align="center",fig.cap='Selection of K'}
+library(LICORS)
+# find the best k
+set.seed(10)
+X = scale(mkt[,c(-1,-2,-36,-37)], center=TRUE, scale=TRUE)
+k.max <- 15
+data <- X
+
+# examine which k is the best
+wss <- sapply(1:k.max, 
+              function(k){kmeanspp(data, k, nstart=25,iter.max = 10 )$tot.withinss})
+plot(1:k.max, wss,
+     type="b", pch = 19, frame = FALSE, 
+     xlab="Number of clusters K",
+     ylab="Total within-clusters sum of squares")
+```
+
+To balance the simplicity and accuracy, we select k=8. Then we calculate the distance of a feature to the center of its cluster, the scores of 8 clusters are as follows:
+```{r, echo=FALSE, warning=FALSE, message=FALSE,fig.align="center"}
+# select k = 8
+mu = attr(X,"scaled:center")
+sigma = attr(X, "scaled:scale")
+clust1 =  kmeanspp(X, 8, nstart=25)
+
+for (k in 1:8){
+  center = round(clust1$centers[k,]*sigma + mu,2)
+  print(sort(center))
+  cat('-------------End of Cluster', k, '------------------\n')
+}
+```
+For each cluster, we select 3 highest scores and 3 lowest scores. A high score means the associated feature is far away from the centroid of its cluster; in contrary, a low score means a feature is very close to the center of its cluster. By creating 8 k-means clusters, we explore interests of users.
+
+In cluster 1, 3 closest features are: small_business, business, and crafts; 3 furthest features are: news, politics, and automotive. This model considers business people do not have interests in news, politics, and automotive. Figure 4 shows that food and parenting are grouped together in this model.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE,fig.align="center",fig.cap='Food vs. Parenting'}
+library(ggplot2)
+
+qplot(food, parenting, data=mkt, color=factor(clust1$cluster))
+```
+
+In cluster 2, 3 closest features are: small_business, beauty, business; 3 furthest features are: health nutrition, personal fitness, cooking. Note that health nutrition's score is 12.08, while the score second to it is only 6.45, this means that in this cluser, health nutrition seems not fit any of other groups.
+
+In cluster 3, 3 closest features are: small business, business, home and garden; 3 furthest features are: sports fandom, religion, food. Surprisingly, this model finds business people also have interets in home and garden, and sports fans are interested in religion and food.
+
+In cluster 4, 3 closest features are: small business, eco, business; 3 furthest features are: photo sharing, current events, shopping.
+
+In cluster 5, 3 closest features are: small business, business, crafts; 3 furthest features are: cooking, photo sharing, fashion. Figure 5 shows that this model groups tv film and art together.
+```{r, echo=FALSE, warning=FALSE, message=FALSE,fig.align="center",fig.cap='TV film vs. Art'}
+qplot(tv_film, art, data=mkt, color=factor(clust1$cluster))
+```
+
+In cluster 6, 3 closest features are: computers, automotive, eco; 3 furthest features are: tv film, art, photo sharing.
+
+In cluster 7, 3 closest features are: business, beauty, small business; 2 furthest features are: college uni, online gaming. The reason we only show 2 furthest features is that online gaming and college uni both have scores over 10, but the third top feature, photo sharing, only has a score of 2.80. Apparently, this model groups college students together, and it categorize people who are interested in photo sharing into another group.
+
+In cluster 8, 3 closest features are: art, beauty, home and garden; 3 furthest features are: politics, travel, computers.
+
+Most of cluster models take a center near small business, and they tend to group people who are interested in small business and business together.
+```{r, echo=FALSE, warning=FALSE, message=FALSE,fig.align="center",fig.cap='Small business vs. Business'}
+qplot(small_business, business, data=mkt, color=factor(clust1$cluster))
+```
+However, other than that, different models have different mechanisms to treat similarity of features. For example, photo sharing appears in cluster 4, 5, 6, as shown in Figure 6, but it is grouped with current events, fashion, and art, respectively. Figure 7 shows that all 8 clusters barely group photo sharing and current events together.
+```{r, echo=FALSE, warning=FALSE, message=FALSE,fig.align="center",fig.cap='Current events vs. Photo sharing'}
+qplot(current_events, photo_sharing, data=mkt, color=factor(clust1$cluster))
+```
+In conclusion, different cluster models have different ways to classify features, but we could still find some patterns and based on which to refer correlations among people's interests.
+
+
